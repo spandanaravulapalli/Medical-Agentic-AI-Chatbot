@@ -11,6 +11,7 @@ venv.bak/
 # Distribution / packaging
 *.egg-info/
 *.egg
+src/__pycache__/
 
 
 .DS_Store
