@@ -5,6 +5,7 @@ from langchain_openai import ChatOpenAI
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
+from langchain.memory import ConversationBufferMemory
 from dotenv import load_dotenv
 from src.prompt import *
 import os
@@ -33,6 +34,9 @@ docsearch = PineconeVectorStore.from_existing_index(
 
 retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k":3})
 
+# Initialize conversation memory
+memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+
 chatModel = ChatOpenAI(model="gpt-4o")
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -51,16 +55,40 @@ def index():
     return render_template('chat.html')
 
 
-
-@app.route("/get", methods=["GET", "POST"])
+@app.route("/chat", methods=["GET", "POST"])
 def chat():
-    msg = request.form["msg"]
-    input = msg
-    print(input)
-    response = rag_chain.invoke({"input": msg})
-    print("Response : ", response["answer"])
-    return str(response["answer"])
+    # Accept msg from either query string (GET) or form data (POST)
+    msg = request.args.get("msg") or request.form.get("msg")
+    
+    if not msg:
+        return jsonify({"error": "Missing 'msg' parameter"}), 400
+    
+    print(f"User input: {msg}")
 
+    # Add user message to memory
+    memory.chat_memory.add_user_message(msg)
+
+    # Invoke chain with chat history
+    response = rag_chain.invoke({"input": msg, "chat_history": memory.buffer})
+    answer = response["answer"]
+    print(f"Response: {answer}")
+
+    # Add AI response to memory
+    memory.chat_memory.add_ai_message(answer)
+    return str(answer)
+
+
+@app.route("/history", methods=["GET"])
+def get_history():
+    """Return chat history for frontend display"""
+    history = [
+        {
+            "type": msg.type,
+            "content": msg.content
+        }
+        for msg in memory.chat_memory.messages
+    ]
+    return jsonify({"history": history})
 
 
 if __name__ == '__main__':
